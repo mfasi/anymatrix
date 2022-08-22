@@ -363,11 +363,32 @@ end
         IDs = IDs.';
     end
 
+    function map = create_matrix_to_function_map(path_to_group, group_name)
+        map = create_map(path_to_group, group_name,...
+                         'anymatrix_matrix_to_function_');
+    end
+
+    function map = create_function_to_matrix_map(path_to_group, group_name)
+        map = create_map(path_to_group, group_name,...
+                         'anymatrix_function_to_matrix_');
+    end
+
+    function map = create_map(path_to_group, group_name, function_name)
+        if isfile([path_to_group filesep function_name group_name '.m'])
+            curr_dir = cd(path_to_group);
+            map = str2func([function_name group_name]);
+            cd(curr_dir);
+        else
+            map = @(x)x;
+        end
+    end
+
     % Scan the group folders and obtain the matrix IDs.
     function IDs = scan_matrices(groups)
         IDs = {};
         for group = groups.'
             path_to_group = [root_path, '/', group{1}, '/private/'];
+            f_to_m =  create_function_to_matrix_map(path_to_group, group{1});
             mfiles = dir([path_to_group, '*.m']);
             for mfile = mfiles.'
                 % Find which .m files are matrix-generating files.
@@ -377,13 +398,14 @@ end
                     contains(mfile_contents, 'properties ={') || ...
                     contains(mfile_contents, 'properties={'))
                     IDs = [IDs; [group{1}, '/', ...
-                        extractBefore(mfile.name, '.m')]];
+                                 f_to_m(extractBefore(mfile.name, '.m'))]];
                 end
             end
             
             % Read matrix IDs that are placed in properties.m files and
             % add them if they are not in yet from the M-files.
-            if (isfile(strcat(path_to_group, 'am_properties.m')))
+            m_to_f =  create_matrix_to_function_map(path_to_group, group{1});
+            if (isfile(strcat(path_to_group, m_to_f('am_properties.m'))))
                 handle = str2func(strcat('anymatrix_', group{1}));
                 P = handle('am_properties');
                 moreIDs = strcat(group{1}, '/', P(:,1));
@@ -453,22 +475,24 @@ end
         path_to_group = [root_path, '/', group_name, '/private/'];
         matrix_name = matrix_ID(slashloc+1:length(matrix_ID));
         handle = str2func(strcat('anymatrix_', group_name));
+        m_to_f =  create_matrix_to_function_map(path_to_group, group_name);
         P = {};
         % Get properties from the M-file of the matrix.
-        mfile_path = strcat(path_to_group, matrix_name, '.m');
+        mfile_path = strcat(path_to_group, m_to_f(matrix_name), '.m');
         if isfile(mfile_path)
             mfile_contents = fileread(mfile_path);
             if (contains(mfile_contents, 'properties = {') || ...
                 contains(mfile_contents, 'properties= {') || ...
                 contains(mfile_contents, 'properties ={') || ...
                 contains(mfile_contents, 'properties={'))
-                noutputs = nargout(strcat(path_to_group, matrix_name));
+                noutputs = nargout(strcat(path_to_group, m_to_f(matrix_name)));
                 temp = {};
                 [temp{1:noutputs-1},P] = handle(matrix_name);
             end
         end
         % Get other properties from the entry in the properties.m file.
-        if (isfile(strcat(path_to_group, 'am_properties.m')))
+        m_to_f =  create_matrix_to_function_map(path_to_group, group_name);
+        if (isfile(strcat(path_to_group, m_to_f('am_properties.m'))))
             temp = handle('am_properties');
             if (ismember(matrix_name, temp(:, 1)))
                 temp = temp{strcmp(matrix_name, temp(:, 1)), 2};
